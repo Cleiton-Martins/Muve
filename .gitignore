@@ -1,0 +1,61 @@
+.env*
+*.env
+!.env.example
+
+# Credenciais e chaves
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+*.jks
+*.mobileprovision
+service-account*.json
+credentials*.json
+
+# Dependências
+node_modules/
+.pnpm-store/
+
+# Compilação e Builds
+dist/
+dist-ssr/
+build/
+.cache/
+.vite/
+vite.config.*.timestamp-*
+*.tsbuildinfo
+.expo/
+.expo-shared/
+web-build/
+
+# Resultados de testes
+coverage/
+.nyc_output/
+test-results/
+junit*.xml
+
+# Logs e Ficheiros Temporários
+logs/
+*.log
+*-debug.log*
+.tmp-*
+.claude-replay.*
+
+# Backups e dumps
+*.bak
+*.backup
+*.dump
+*.orig
+
+# Ficheiros do Sistema Operativo e Editores
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+supabase/.temp/
+
+# Lockfile de outro gerenciador (web e backend usam pnpm; mobile usa npm de proposito)
+yarn.lock

@@ -1,0 +1,127 @@
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useState } from "react";
+import { Text, View } from "react-native";
+import { hasPasswordLogin, updateProfile } from "../../client/account.ts";
+import { errorMessage } from "../../client/api.ts";
+import { useAuth } from "../../client/AuthContext.tsx";
+import type { UploadFile } from "../../client/config.ts";
+import { useAsync } from "../../client/useAsync.ts";
+import { limpezaProibida, montarAlteracoesDoPerfil } from "../../client/perfil.ts";
+import { maskDocumento, maskPhone } from "../../client/validators.ts";
+import { camposFaltantes, descreverFaltantes, ESTILOS_MUSICAIS, isValidChavePix, isValidDocumento, isValidTelefone, aceitaUsuarioDaRede, isValidUrl, LINK_DA_REDE_TAMANHO_MAXIMO, linkComProtocolo, mensagemDeRedeInvalida, normalizarLinkDaRede, normalizeChavePix, REDES_SOCIAIS, ROTULOS_REDES, type AcaoPerfil, type CampoPerfil, type RedeSocial } from "@muve/shared/dominio.ts";
+import { ImageField, LocationFields, PixKeyFields } from "../../components/fields";
+import { VerificacaoDeSeguranca } from "../../components/VerificacaoDeSeguranca";
+import { Alert, Button, Chips, Field, Grupo, Icon, PasswordField, Screen, Surface } from "../../components/ui";
+import { CAPTCHA_ATIVO } from "../../lib/turnstile";
+import { colors, radius, space, styles, type } from "../../lib/theme";
+import { useMe } from "../../lib/useMe";
+
+const EXEMPLOS_DAS_REDES: Record<RedeSocial, string> = {
+  instagram: "@seuperfil ou link",
+  youtube: "Link do canal ou vídeo",
+  spotify: "Link do artista",
+  tiktok: "@seuperfil ou link",
+};
+
+const motivo: Record<AcaoPerfil, string> = {
+  feed: "montar seu feed",
+  candidatar: "se inscrever em eventos",
+  criarEvento: "publicar um evento",
+  pagar: "aprovar um candidato",
+};
+
+export default function EditProfileScreen() {
+  const me = useMe();
+  const { refreshMe } = useAuth();
+  const router = useRouter();
+  const { acao } = useLocalSearchParams<{ acao?: AcaoPerfil }>();
+  const isMusician = me.role === "MUSICIAN";
+  const faltando = acao ? camposFaltantes(me, acao) : [];
+  const pede = (campo: CampoPerfil) => !acao || faltando.includes(campo);
+
+  const [form, setForm] = useState({ nome: me.nome, documento: maskDocumento(me.documento ?? ""), telefone: maskPhone(me.telefone ?? ""), uf: me.uf ?? "", cidade: me.cidade ?? "", bio: me.bio ?? "", chavePixTipo: me.chavePixTipo ?? "", chavePix: me.chavePix ?? "", portfolioUrl: me.portfolioUrl ?? "" });
+  const [redes, setRedes] = useState<Record<RedeSocial, string>>({ instagram: me.redesSociais?.instagram ?? "", youtube: me.redesSociais?.youtube ?? "", spotify: me.redesSociais?.spotify ?? "", tiktok: me.redesSociais?.tiktok ?? "" });
+  const [estilos, setEstilos] = useState<string[]>(me.estilosMusicais ?? []);
+  const [avatar, setAvatar] = useState<UploadFile | null>(null);
+  const [preview, setPreview] = useState(me.fotoPerfilUrl ?? "");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const set = (changes: Partial<typeof form>) => { setForm((c) => ({ ...c, ...changes })); setError(""); };
+  const [senhaAtual, setSenhaAtual] = useState("");
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaKey, setCaptchaKey] = useState(0);
+  const login = useAsync("login-com-senha", hasPasswordLogin);
+  const chaveNova = form.chavePix && form.chavePixTipo && isValidChavePix(form.chavePixTipo, form.chavePix) ? normalizeChavePix(form.chavePixTipo, form.chavePix) : null;
+  const trocaChavePix = isMusician && Boolean(me.chavePix) && chaveNova !== null && (chaveNova !== me.chavePix || form.chavePixTipo !== me.chavePixTipo);
+  const pedeSenha = trocaChavePix && login.data !== false;
+
+  async function save() {
+    if (!form.nome.trim()) return setError("Informe seu nome.");
+    const proibido = limpezaProibida(me, { ...form, redes, estilos });
+    if (proibido) return setError(proibido);
+    if (form.documento && !isValidDocumento(form.documento)) return setError("Informe um CPF ou CNPJ válido.");
+    if (form.telefone && !isValidTelefone(form.telefone)) return setError("Informe um telefone completo.");
+    if (form.uf && !form.cidade) return setError("Selecione a cidade.");
+    if (isMusician && form.chavePix && !isValidChavePix(form.chavePixTipo, form.chavePix)) return setError("Chave Pix inválida para o tipo selecionado.");
+    const site = linkComProtocolo(form.portfolioUrl);
+    if (isMusician && site && !isValidUrl(site)) return setError("Informe um link válido para o site, como meusite.com.br.");
+    const redeInvalida = isMusician && REDES_SOCIAIS.find((rede) => redes[rede].trim() && !normalizarLinkDaRede(rede, redes[rede]));
+    if (redeInvalida) return setError(mensagemDeRedeInvalida(redeInvalida));
+    if (pedeSenha && !senhaAtual) return setError("Para trocar a chave Pix, confirme a senha da conta.");
+    if (pedeSenha && CAPTCHA_ATIVO && !captchaToken) return setError("Confirme a verificação de segurança.");
+    setSubmitting(true);
+    try {
+      const confirmacao = pedeSenha ? { senhaAtual, captchaToken: captchaToken ?? undefined } : {};
+      await refreshMe(await updateProfile({ ...montarAlteracoesDoPerfil(me, { ...form, redes, estilos }), ...confirmacao }, avatar));
+      if (router.canGoBack()) router.back();
+      else router.replace("/(app)");
+    } catch (e) {
+      setError(errorMessage(e));
+      setSubmitting(false);
+      if (pedeSenha) {
+        setCaptchaToken(null);
+        setCaptchaKey((atual) => atual + 1);
+      }
+    }
+  }
+
+  return <Screen>
+    {acao
+      ? <Surface destaque>
+        <View style={[styles.row, { gap: space.sm }]}>
+          <View style={{ width: 32, height: 32, borderRadius: radius.sm, backgroundColor: colors.accentSoft, alignItems: "center", justifyContent: "center" }}><Icon name="checkmark-circle-outline" size={17} color={colors.accentText}/></View>
+          <Text style={type.title} accessibilityRole="header">Complete seu perfil</Text>
+        </View>
+        <Text style={type.bodySmall}>Para {motivo[acao]}, falta: {descreverFaltantes(faltando) || "nada; pode salvar"}.</Text>
+      </Surface>
+      : null}
+    {pede("foto") && <ImageField label={me.fotoPerfilUrl ? "Trocar foto do perfil" : "Foto do perfil"} preview={preview} onPick={(file, uri) => { setAvatar(file); setPreview(uri); setError(""); }} onError={setError}/>}
+    {(!acao || pede("documento") || pede("telefone") || pede("cidade")) && <Grupo titulo="Seus dados" icone="person-outline">
+      {!acao && <Field label={isMusician ? "Nome ou nome da banda" : "Nome ou nome fantasia"} value={form.nome} onChangeText={(nome) => set({ nome })}/>}
+      {pede("documento") && <Field label="CPF ou CNPJ" value={form.documento} onChangeText={(v) => set({ documento: maskDocumento(v) })} keyboardType="numeric" placeholder="000.000.000-00" hint={acao ? "Identifica a conta; nunca aparece para outros usuários." : undefined}/>}
+      {pede("telefone") && <Field label="Telefone" value={form.telefone} onChangeText={(v) => set({ telefone: maskPhone(v) })} keyboardType="phone-pad" placeholder="(00) 00000-0000" hint={acao ? "Compartilhado com a outra parte só após uma contratação." : undefined}/>}
+      {pede("cidade") && <LocationFields uf={form.uf} cidade={form.cidade} onUfChange={(uf) => set({ uf, cidade: "" })} onCidadeChange={(cidade) => set({ cidade })} onError={setError}/>}
+    </Grupo>}
+    {isMusician && (pede("estilos") || !acao) && <Grupo titulo="Como você toca" icone="musical-notes-outline">
+      <Text style={type.bodySmall}>O feed só mostra eventos destes estilos. Escolha quantos quiser.</Text>
+      <Chips options={ESTILOS_MUSICAIS} selected={estilos} onToggle={(s) => { setEstilos((old) => old.includes(s) ? old.filter((x) => x !== s) : [...old, s]); setError(""); }}/>
+      {!acao && <>
+        <Text style={type.bodySmall}>Onde mostrar o seu trabalho (opcional). É o que o contratante vê antes de escolher.</Text>
+        {REDES_SOCIAIS.map((rede) => <Field key={rede} label={ROTULOS_REDES[rede]} value={redes[rede]} onChangeText={(valor) => { setRedes((atuais) => ({ ...atuais, [rede]: valor })); setError(""); }} autoCapitalize="none" autoCorrect={false} maxLength={LINK_DA_REDE_TAMANHO_MAXIMO} keyboardType={aceitaUsuarioDaRede(rede) ? "default" : "url"} placeholder={EXEMPLOS_DAS_REDES[rede]}/>)}
+        <Field label="Site ou outro link" value={form.portfolioUrl} onChangeText={(portfolioUrl) => set({ portfolioUrl })} autoCapitalize="none" autoCorrect={false} maxLength={LINK_DA_REDE_TAMANHO_MAXIMO} keyboardType="url" placeholder="meusite.com.br"/>
+      </>}
+      {!acao && <Field label="Bio (opcional)" value={form.bio} onChangeText={(bio) => set({ bio })} multiline maxLength={1000} placeholder="Conte um pouco sobre sua trajetória musical..."/>}
+    </Grupo>}
+    {isMusician && pede("chavePix") && <Grupo titulo="Recebimento" icone="cash-outline">
+      <PixKeyFields tipo={form.chavePixTipo} chave={form.chavePix} onTipoChange={(chavePixTipo) => set({ chavePixTipo })} onChaveChange={(chavePix) => set({ chavePix })}/>
+      {pedeSenha && <>
+        <Text style={type.bodySmall}>É para essa chave que os seus cachês são repassados. Para trocar, confirme a senha da conta.</Text>
+        <PasswordField label="Senha da conta" value={senhaAtual} onChangeText={(senha) => { setSenhaAtual(senha); setError(""); }}/>
+        <VerificacaoDeSeguranca key={captchaKey} onToken={setCaptchaToken}/>
+      </>}
+    </Grupo>}
+    {error ? <Alert tone="error">{error}</Alert> : null}
+    <Button title={acao ? "Salvar e continuar" : "Salvar alterações"} icon="arrow-forward" onPress={save} loading={submitting}/>
+    <Button title="Cancelar" variant="text" onPress={() => router.back()} disabled={submitting}/>
+  </Screen>;
+}

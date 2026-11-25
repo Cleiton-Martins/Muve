@@ -1,0 +1,39 @@
+import { Redirect } from "expo-router";
+import { useState } from "react";
+import { updatePassword } from "../../client/account.ts";
+import { errorMessage } from "../../client/api.ts";
+import { useAuth } from "../../client/AuthContext.tsx";
+import { SENHA_TAMANHO_MINIMO } from "@muve/shared/dominio.ts";
+import { AuthHeader } from "../../components/AuthHeader";
+import { Alert, Button, PasswordField, Screen } from "../../components/ui";
+
+export default function ResetPasswordScreen() {
+  const { finishPasswordRecovery, recoveringPassword } = useAuth();
+  const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit() {
+    if (password.length < SENHA_TAMANHO_MINIMO) return setError(`A senha deve ter pelo menos ${SENHA_TAMANHO_MINIMO} caracteres.`);
+    if (password !== confirmation) return setError("As senhas não coincidem.");
+    setSubmitting(true);
+    try {
+      await updatePassword(password);
+      finishPasswordRecovery();
+    } catch (e) {
+      setError(errorMessage(e));
+      setSubmitting(false);
+    }
+  }
+
+  if (!recoveringPassword) return <Redirect href="/(auth)/login"/>;
+
+  return <Screen evitarTeclado>
+    <AuthHeader titulo="Defina uma nova senha" subtitulo="É a senha que você usará para entrar na Muve a partir de agora."/>
+    <PasswordField nova label="Nova senha" value={password} onChangeText={(v) => { setPassword(v); setError(""); }}/>
+    <PasswordField nova label="Confirme a nova senha" value={confirmation} onChangeText={(v) => { setConfirmation(v); setError(""); }}/>
+    {error ? <Alert tone="error">{error}</Alert> : null}
+    <Button title="Salvar nova senha" onPress={submit} loading={submitting}/>
+  </Screen>;
+}

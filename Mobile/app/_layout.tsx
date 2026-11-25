@@ -1,0 +1,109 @@
+import "../lib/client";
+import { Geist_400Regular, Geist_500Medium, Geist_600SemiBold, Geist_700Bold, useFonts } from "@expo-google-fonts/geist";
+import * as Linking from "expo-linking";
+import { DarkTheme, Stack, ThemeProvider, useRouter } from "expo-router";
+import * as SplashScreen from "expo-splash-screen";
+import { StatusBar } from "expo-status-bar";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { Platform, Text, View } from "react-native";
+import { AuthProvider, useAuth } from "../client/AuthContext.tsx";
+import { Abertura } from "../components/Abertura";
+import { voltarNaWeb } from "../components/BotaoVoltar";
+import { telasLiberadas } from "../lib/abertura";
+import { consumeAuthLink } from "../lib/authLinks";
+import { usePushNotifications } from "../lib/push";
+import { colors, space, stackOptions, type } from "../lib/theme";
+import { Button } from "../components/ui";
+
+SplashScreen.preventAutoHideAsync().catch(() => {});
+
+const temaDaNavegacao = {
+  ...DarkTheme,
+  colors: { ...DarkTheme.colors, primary: colors.accent, background: colors.bg, card: colors.bg, text: colors.ink, border: colors.line },
+};
+
+export default function RootLayout() {
+  const [fontsLoaded] = useFonts({ Geist_400Regular, Geist_500Medium, Geist_600SemiBold, Geist_700Bold });
+  const [abrindo, setAbrindo] = useState(true);
+  const [desenhoConcluido, setDesenhoConcluido] = useState(false);
+  const encerrarAbertura = useCallback(() => setAbrindo(false), []);
+  const concluirDesenho = useCallback(() => setDesenhoConcluido(true), []);
+  return <AuthProvider>
+    <LinksDeAutenticacao/>
+    {fontsLoaded && <ThemeProvider value={temaDaNavegacao}>
+      <StatusBar style="light"/>
+      <WebFrame>
+        {telasLiberadas({ abrindo, desenhoConcluido }) && <AuthGate/>}
+        {abrindo && <Abertura onFim={encerrarAbertura} onDesenhoConcluido={concluirDesenho}/>}
+      </WebFrame>
+    </ThemeProvider>}
+  </AuthProvider>;
+}
+
+function WebFrame({ children }: { children: ReactNode }) {
+  if (Platform.OS !== "web") return children;
+  return <View style={{ flex: 1, alignItems: "center", backgroundColor: "#050508" }}>
+    <View style={{ flex: 1, width: "100%", maxWidth: 480, backgroundColor: colors.bg, borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.line, overflow: "hidden" }}>
+      {children}
+    </View>
+  </View>;
+}
+
+function LinksDeAutenticacao() {
+  const { beginPasswordRecovery } = useAuth();
+  useEffect(() => {
+    const handle = (url: string | null) => consumeAuthLink(url, beginPasswordRecovery).catch((error: unknown) => console.warn("Link de autenticação não aplicado", error instanceof Error ? error.message : error));
+    Linking.getInitialURL().then(handle);
+    const subscription = Linking.addEventListener("url", (event) => handle(event.url));
+    return () => subscription.remove();
+  }, [beginPasswordRecovery]);
+  return null;
+}
+
+function AuthGate() {
+  const { state, recoveringPassword, retrySession } = useAuth();
+  const router = useRouter();
+  usePushNotifications(state.status === "signedIn");
+  const loading = state.status === "loading";
+  const signedIn = state.status === "signedIn" && !recoveringPassword;
+
+  useEffect(() => {
+    if (loading) return;
+    SplashScreen.hideAsync().catch(() => {});
+    if (recoveringPassword) router.replace("/(auth)/reset");
+    else if (state.status === "needsProfile") router.replace("/(auth)/completar");
+  }, [loading, recoveringPassword, state.status, router]);
+
+  if (loading) return null;
+
+  if (state.status === "error") return <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: space.xl, gap: space.lg, backgroundColor: colors.bg }}>
+    <Text style={[type.body, { textAlign: "center" }]}>{state.notice}</Text>
+    <Button title="Tentar novamente" icon="refresh" block={false} onPress={() => void retrySession()}/>
+  </View>;
+
+  return <Stack screenOptions={{ ...stackOptions, ...voltarNaWeb, animation: "slide_from_right" }}>
+    <Stack.Protected guard={!signedIn}>
+      <Stack.Screen name="(auth)" options={{ headerShown: false }}/>
+    </Stack.Protected>
+    <Stack.Protected guard={signedIn}>
+      <Stack.Screen name="(app)" options={{ headerShown: false }}/>
+      <Stack.Screen name="event/new" options={{ title: "Novo evento" }}/>
+      <Stack.Screen name="event/[id]/index" options={{ title: "" }}/>
+      <Stack.Screen name="event/[id]/edit" options={{ title: "Editar evento" }}/>
+      <Stack.Screen name="event/[id]/checkout" options={{ title: "Pagamento" }}/>
+      <Stack.Screen name="event/[id]/hiring" options={{ title: "Contratação" }}/>
+      <Stack.Screen name="event/[id]/candidate/[candidateId]" options={{ title: "Perfil do músico" }}/>
+      <Stack.Screen name="conversa/[candidateId]" options={{ title: "Conversa" }}/>
+      <Stack.Screen name="notificacoes" options={{ title: "Notificações" }}/>
+      <Stack.Screen name="pro" options={{ title: "Muve Pro" }}/>
+      <Stack.Screen name="casa" options={{ title: "Muve Casa" }}/>
+      <Stack.Screen name="favoritos" options={{ title: "Favoritos" }}/>
+      <Stack.Screen name="agenda" options={{ title: "Agenda" }}/>
+      <Stack.Screen name="account/edit" options={{ title: "Editar perfil" }}/>
+      <Stack.Screen name="account/privacy" options={{ title: "Conta e privacidade" }}/>
+      <Stack.Screen name="account/delete" options={{ title: "Excluir conta" }}/>
+    </Stack.Protected>
+    <Stack.Screen name="terms" options={{ title: "Termos de Uso" }}/>
+    <Stack.Screen name="auth" options={{ headerShown: false }}/>
+  </Stack>;
+}

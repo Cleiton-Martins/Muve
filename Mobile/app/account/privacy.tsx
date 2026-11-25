@@ -1,0 +1,46 @@
+import { useRouter } from "expo-router";
+import { useState } from "react";
+import { Text, View } from "react-native";
+import { EMAIL_SUPORTE } from "@muve/shared/dominio.ts";
+import { Alert, Button, Heading, Icon, Screen, type IconName } from "../../components/ui";
+import { pedirCopiaDosDados } from "../../lib/suporte";
+import { colors, space, styles, type } from "../../lib/theme";
+import { useMe } from "../../lib/useMe";
+
+export default function PrivacyScreen() {
+  const me = useMe();
+  const router = useRouter();
+  const [linkError, setLinkError] = useState("");
+
+  const items: { icon: IconName; title: string; text: string }[] = [
+    { icon: "mail-outline", title: "E-mail de acesso", text: `${me.email}. Para trocar, escreva para ${EMAIL_SUPORTE}.` },
+    { icon: "card-outline", title: "CPF/CNPJ e telefone", text: "Usados para identificar a conta e, no caso do músico, para o repasse do cachê. Nunca aparecem para outros usuários; só o telefone é compartilhado com a outra parte depois de uma contratação." },
+    me.role === "MUSICIAN"
+      ? { icon: "location-outline", title: "Cidade", text: "Define quais eventos aparecem para você e a que distância. O endereço exato de um evento só é mostrado ao músico contratado." }
+      : { icon: "location-outline", title: "Cidade", text: "Aparece no seu perfil. O endereço exato dos seus eventos só é mostrado ao músico contratado." },
+    me.role === "MUSICIAN"
+      ? { icon: "star-outline", title: "Avaliações", text: "As notas que você recebe aparecem no seu perfil e para os contratantes dos eventos em que você se inscreve." }
+      : { icon: "star-outline", title: "Avaliações", text: "As notas que você recebe aparecem no seu perfil e para todos os músicos, na tela dos seus eventos." },
+  ];
+
+  return <Screen>
+    <Heading title="Conta e privacidade" subtitle="O que a Muve guarda sobre você e para que cada dado serve."/>
+    <View style={[styles.card, { gap: space.lg }]}>
+      {items.map((item) => <View key={item.title} style={[styles.row, { alignItems: "flex-start", gap: 14 }]}>
+        <Icon name={item.icon} size={20} color={colors.accentText}/>
+        <View style={{ flex: 1, gap: 2 }}><Text style={type.titleSmall}>{item.title}</Text><Text style={type.bodySmall}>{item.text}</Text></View>
+      </View>)}
+    </View>
+    <View style={{ gap: space.sm, marginTop: space.xl }}>
+      <Text style={type.title}>Seus direitos</Text>
+      <Text style={type.bodySmall}>Pela LGPD, você pode pedir uma cópia ou a correção dos seus dados.</Text>
+      <Button title="Pedir uma cópia dos meus dados" variant="text" block={false} onPress={() => { setLinkError(""); pedirCopiaDosDados(me.email, setLinkError); }}/>
+      {linkError ? <Alert tone="error">{linkError}</Alert> : null}
+    </View>
+    <View style={{ gap: space.sm, marginTop: space.xl }}>
+      <Text style={type.title}>Encerrar a conta</Text>
+      <Text style={type.bodySmall}>Remove seu perfil, eventos, candidaturas e avaliações de forma permanente. Não é possível enquanto houver show contratado ou valores ainda não repassados ou devolvidos.</Text>
+      <Button title="Quero excluir minha conta" variant="text" block={false} onPress={() => router.push("/account/delete")}/>
+    </View>
+  </Screen>;
+}

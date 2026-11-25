@@ -1,0 +1,52 @@
+import { useEffect, useState } from "react";
+import { rememberedEmail, requestPasswordReset } from "../../client/account.ts";
+import { errorMessage } from "../../client/api.ts";
+import { isValidEmail, sanitizeEmail } from "../../client/validators.ts";
+import { VerificacaoDeSeguranca } from "../../components/VerificacaoDeSeguranca";
+import { CAPTCHA_ATIVO } from "../../lib/turnstile";
+import { AuthHeader } from "../../components/AuthHeader";
+import { Alert, Button, Field, Screen } from "../../components/ui";
+
+export default function RecoverScreen() {
+  const [email, setEmail] = useState("");
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaKey, setCaptchaKey] = useState(0);
+  const faltaCaptcha = CAPTCHA_ATIVO && !captchaToken;
+
+  useEffect(() => {
+    rememberedEmail().then((saved) => saved && setEmail(saved));
+  }, []);
+
+  async function submit() {
+    if (submitting) return;
+    if (!isValidEmail(email)) return setError("Informe um e-mail válido.");
+    if (faltaCaptcha) return setError("Confirme que você não é um robô.");
+    setSubmitting(true);
+    setError("");
+    try {
+      await requestPasswordReset(email, captchaToken ?? undefined);
+      setSent(true);
+    } catch (e) {
+      setError(errorMessage(e));
+      setCaptchaToken(null);
+      setCaptchaKey((key) => key + 1);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return <Screen evitarTeclado>
+    <AuthHeader titulo="Recupere seu acesso" subtitulo="Enviaremos um link de redefinição para o e-mail cadastrado. O link abre o app."/>
+    {sent
+      ? <Alert tone="success">Se este e-mail estiver cadastrado, você receberá as instruções em instantes.</Alert>
+      : <>
+        <Field label="E-mail da conta" value={email} onChangeText={(v) => { setEmail(sanitizeEmail(v)); setError(""); }} autoCapitalize="none" autoComplete="email" keyboardType="email-address" returnKeyType="send" onSubmitEditing={submit}/>
+        <VerificacaoDeSeguranca key={captchaKey} onToken={setCaptchaToken} aviso="Conclua a verificação de segurança para enviar o link."/>
+        {error ? <Alert tone="error">{error}</Alert> : null}
+        <Button title="Enviar link de recuperação" icon="mail-outline" onPress={submit} loading={submitting} disabled={faltaCaptcha}/>
+      </>}
+  </Screen>;
+}

@@ -1,0 +1,178 @@
+import { z } from "zod";
+import { base64UrlDe32Bytes, operacaoValida } from "@muve/shared/pushComprovante.ts";
+import {
+  ESTILOS_MUSICAIS,
+  isValidChavePix,
+  isValidDocumento,
+  isValidEmail,
+  isValidUrl,
+  normalizeChavePix,
+  onlyDigits,
+  SENHA_TAMANHO_MINIMO,
+  TIPOS_CHAVE_PIX,
+  normalizarLinkDaRede,
+  REDES_SOCIAIS,
+  mensagemDeRedeInvalida,
+  type RedesSociais,
+} from "@muve/shared/dominio.ts";
+import { cidade, telefone, texto, uf } from "./fields.ts";
+
+export type Role = "MUSICIAN" | "CONTRACTOR";
+
+const email = texto("Informe um e-mail válido.").toLowerCase().refine(isValidEmail, "Informe um e-mail válido.");
+
+const password = z
+  .string({ error: "Informe a senha." })
+  .min(SENHA_TAMANHO_MINIMO, `A senha deve ter pelo menos ${SENHA_TAMANHO_MINIMO} caracteres.`)
+  .max(72, "A senha deve ter no máximo 72 caracteres.");
+
+const captchaToken = z.string().trim().max(2048, "Confirme que você não é um robô.").optional();
+
+const nome = texto("Informe seu nome.").min(1, "Informe seu nome.").max(120, "O nome deve ter no máximo 120 caracteres.");
+
+export const signupSchema = z.object({
+  role: z.enum(["MUSICIAN", "CONTRACTOR"], { error: "Selecione o tipo de conta." }),
+  nome,
+  email,
+  password,
+  aceiteTermos: z.literal(true, { error: "Aceite os Termos de Uso para criar a conta." }),
+  redirectTo: z.string().trim().max(300).optional(),
+  captchaToken,
+});
+export type SignupInput = z.infer<typeof signupSchema>;
+
+const tokenDePush = z.string({ error: "Token inválido." }).max(200, "Token inválido.").regex(/^Expo(nent)?PushToken\[.+\]$/, "Token inválido.");
+const operacaoDePush = z.string({ error: "Operação inválida." }).refine(operacaoValida, "Operação inválida.");
+const base64Url32 = (campo: "segredo" | "comprovante", mensagem: string) =>
+  z.string({ error: mensagem }).refine((valor) => {
+    try {
+      base64UrlDe32Bytes(valor, campo);
+      return true;
+    } catch {
+      return false;
+    }
+  }, mensagem);
+const comprovanteDePush = base64Url32("comprovante", "Comprovante inválido.");
+
+export const emissaoDePushSchema = z.object({ token: tokenDePush, operationId: operacaoDePush, comprovante: comprovanteDePush });
+export const registroDePushSchema = emissaoDePushSchema.extend({ vinculoId: z.uuid("Vínculo inválido.") });
+export const remocaoDePushSchema = z
+  .object({ token: tokenDePush, operationId: operacaoDePush.optional(), comprovante: comprovanteDePush.optional() })
+  .refine((valor) => (valor.operationId === undefined) === (valor.comprovante === undefined), "Informe a operação e o comprovante juntos.");
+export const revogacaoDePushSchema = z.object({ token: tokenDePush, operationId: operacaoDePush, segredo: base64Url32("segredo", "Segredo inválido.") });
+export type EmissaoDePushInput = z.infer<typeof emissaoDePushSchema>;
+export type RegistroDePushInput = z.infer<typeof registroDePushSchema>;
+export type RemocaoDePushInput = z.infer<typeof remocaoDePushSchema>;
+export type RevogacaoDePushInput = z.infer<typeof revogacaoDePushSchema>;
+
+export const completarPerfilSchema = z.object({
+  role: z.enum(["MUSICIAN", "CONTRACTOR"], { error: "Selecione o tipo de conta." }),
+  nome,
+  aceiteTermos: z.literal(true, { error: "Aceite os Termos de Uso para criar a conta." }),
+});
+export type CompletarPerfilInput = z.infer<typeof completarPerfilSchema>;
+
+const clearableText = <T>(schema: z.ZodType<T, string>) =>
+  z
+    .string()
+    .trim()
+    .nullable()
+    .optional()
+    .transform((value) => (value === undefined ? undefined : value || null))
+    .pipe(schema.nullable().optional());
+
+const documento = clearableText(z.string().refine(isValidDocumento, "Informe um CPF ou CNPJ válido.").transform(onlyDigits));
+
+const profileCommon = {
+  nome,
+  documento,
+  telefone: clearableText(telefone),
+  uf: clearableText(uf),
+  cidade: clearableText(cidade),
+};
+
+const localidadeCoerente = (p: { uf?: string | null; cidade?: string | null }, ctx: z.RefinementCtx) => {
+  if ((p.uf === null) !== (p.cidade === null) && (p.uf === null || p.cidade === null)) {
+    ctx.addIssue({ code: "custom", path: ["cidade"], message: "Estado e cidade são apagados juntos." });
+  }
+};
+
+const contractorProfile = z.object(profileCommon).superRefine(localidadeCoerente);
+
+const linkDeRede = z.string({ error: "Link inválido." }).max(300, "O link deve ter no máximo 300 caracteres.").optional();
+const redesSociais = z
+  .object({ instagram: linkDeRede, youtube: linkDeRede, spotify: linkDeRede, tiktok: linkDeRede }, { error: "Redes sociais inválidas." })
+  .optional()
+  .transform((redes, ctx) => {
+    if (!redes) return undefined;
+    const links: RedesSociais = {};
+    for (const rede of REDES_SOCIAIS) {
+      const texto = redes[rede]?.trim();
+      if (!texto) continue;
+      const link = normalizarLinkDaRede(rede, texto);
+      if (!link) {
+        ctx.addIssue({ code: "custom", message: mensagemDeRedeInvalida(rede) });
+        return z.NEVER;
+      }
+      links[rede] = link;
+    }
+    return links;
+  });
+
+const musicianProfile = z
+  .object({
+    ...profileCommon,
+    bio: clearableText(z.string().max(1000, "A bio deve ter no máximo 1000 caracteres.")),
+    estilosMusicais: z
+      .array(z.enum(ESTILOS_MUSICAIS, { error: "Estilo musical inválido." }))
+      .nullable()
+      .optional()
+      .transform((estilos) => (estilos === undefined ? undefined : estilos && estilos.length ? [...new Set(estilos)] : null)),
+    portfolioUrl: clearableText(z.string().refine(isValidUrl, "Informe um link válido, começando com http:// ou https://.")),
+    redesSociais,
+    chavePixTipo: clearableText(z.enum(TIPOS_CHAVE_PIX, { error: "Tipo de chave Pix inválido." })),
+    chavePix: clearableText(z.string()),
+    senhaAtual: z.string().max(200).optional(),
+    captchaToken,
+  })
+  .superRefine(localidadeCoerente)
+  .refine((p) => (p.chavePix ? Boolean(p.chavePixTipo) : true), { path: ["chavePixTipo"], message: "Selecione o tipo da chave Pix." })
+  .refine((p) => (p.chavePix && p.chavePixTipo ? isValidChavePix(p.chavePixTipo, p.chavePix) : true), { path: ["chavePix"], message: "Chave Pix inválida para o tipo selecionado." })
+  .transform((p) => ({
+    ...p,
+    chavePix: p.chavePix && p.chavePixTipo ? normalizeChavePix(p.chavePixTipo, p.chavePix) : p.chavePix === null ? null : undefined,
+    chavePixTipo: p.chavePix && p.chavePixTipo ? p.chavePixTipo : p.chavePix === null ? null : undefined,
+  }));
+
+export const updateProfileSchemas = { MUSICIAN: musicianProfile, CONTRACTOR: contractorProfile };
+export type MusicianChanges = z.infer<typeof musicianProfile>;
+export type ProfileChanges = MusicianChanges | z.infer<typeof contractorProfile>;
+
+export const deleteAccountSchema = z.object({
+  email: texto("Informe o e-mail da conta.").toLowerCase(),
+  password: z.string({ error: "Informe a senha." }),
+  captchaToken,
+});
+export type DeleteAccountInput = z.infer<typeof deleteAccountSchema>;
+
+export interface Account {
+  id: string;
+  role: Role;
+  nome: string;
+  documento: string | null;
+  telefone: string | null;
+  uf: string | null;
+  cidade: string | null;
+  fotoPerfilUrl: string | null;
+  avaliacaoMedia: number;
+  totalAvaliacoes: number;
+  bio?: string | null;
+  estilosMusicais?: string[] | null;
+  chavePixTipo?: string | null;
+  chavePix?: string | null;
+  portfolioUrl?: string | null;
+  redesSociais?: RedesSociais;
+  visibilidadeReduzidaAte?: Date | null;
+  proAte?: Date | null;
+  casaAte?: Date | null;
+}

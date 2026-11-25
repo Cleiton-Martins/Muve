@@ -1,0 +1,17 @@
+{
+  "name": "muve",
+  "private": true,
+  "version": "1.0.0",
+  "packageManager": "pnpm@12.18.0",
+  "scripts": {
+    "postinstall": "pnpm --dir shared install --frozen-lockfile && pnpm --dir Backend install --frozen-lockfile && npm --prefix Mobile ci",
+    "dev:api": "pnpm --dir Backend run dev",
+    "dev:app": "npm --prefix Mobile run start",
+    "typecheck": "pnpm --dir shared run typecheck && pnpm --dir Backend run typecheck && npm --prefix Mobile run typecheck",
+    "lint": "pnpm --dir shared run lint && pnpm --dir Backend run lint && npm --prefix Mobile run lint",
+    "test": "pnpm --dir shared run test && pnpm --dir Backend run test && npm --prefix Mobile test"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}

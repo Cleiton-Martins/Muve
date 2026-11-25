@@ -1,0 +1,29 @@
+{
+  "name": "@muve/shared",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "packageManager": "pnpm@12.18.0",
+  "exports": {
+    "./dominio.ts": "./dominio.ts",
+    "./contratos.ts": "./contratos.ts",
+    "./pushComprovante.ts": "./pushComprovante.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.0.0",
+    "eslint": "^10.12.0",
+    "globals": "^17.13.0",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.71.1",
+    "vitest": "^5.1.0"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}

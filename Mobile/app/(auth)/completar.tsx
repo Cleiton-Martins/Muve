@@ -1,0 +1,55 @@
+import { Redirect, useRouter } from "expo-router";
+import { useEffect, useState } from "react";
+import { View } from "react-native";
+import { completeProfile, type Role } from "../../client/account.ts";
+import { errorMessage } from "../../client/api.ts";
+import { useAuth } from "../../client/AuthContext.tsx";
+import { AuthHeader } from "../../components/AuthHeader";
+import { Alert, Button, Checkbox, Field, EscolhaDePapel, Screen } from "../../components/ui";
+
+export default function CompleteSignupScreen() {
+  const { state, refreshMe, signOut } = useAuth();
+  const router = useRouter();
+  const sugestao = state.status === "needsProfile" ? state.nomeSugerido : "";
+  const email = state.status === "needsProfile" ? state.email : "";
+  const [role, setRole] = useState<Role>("MUSICIAN");
+  const [nome, setNome] = useState(sugestao);
+  const [aceite, setAceite] = useState(false);
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [concluido, setConcluido] = useState(false);
+
+  useEffect(() => {
+    if (concluido && state.status === "signedIn") router.replace("/");
+  }, [concluido, state.status, router]);
+
+  async function submit() {
+    if (!nome.trim()) return setError("Informe seu nome.");
+    if (!aceite) return setError("Aceite os Termos de Uso para criar a conta.");
+    setSubmitting(true);
+    setError("");
+    try {
+      await completeProfile({ role, nome: nome.trim(), aceiteTermos: true });
+      await refreshMe();
+      setConcluido(true);
+    } catch (e) {
+      setError(errorMessage(e));
+      setSubmitting(false);
+    }
+  }
+
+  if (!concluido && state.status !== "needsProfile") return <Redirect href="/(auth)/login"/>;
+
+  return <Screen evitarTeclado>
+    <AuthHeader titulo="Quase lá" subtitulo={`Você entrou com ${email || "o Google"}. Falta só dizer como vai usar a Muve.`}/>
+    <EscolhaDePapel papel={role} escolher={setRole}/>
+    <Field label={role === "MUSICIAN" ? "Nome ou nome da banda" : "Nome ou nome fantasia"} value={nome} onChangeText={(v) => { setNome(v); setError(""); }} autoComplete="name"/>
+    <View>
+      <Checkbox label="Li e aceito os Termos de Uso" checked={aceite} onChange={(v) => { setAceite(v); setError(""); }}/>
+      <Button title="Ler os Termos de Uso" variant="text" block={false} onPress={() => router.push("/terms")}/>
+    </View>
+    {error ? <Alert tone="error">{error}</Alert> : null}
+    <Button title="Começar" icon="arrow-forward" onPress={() => void submit()} loading={submitting}/>
+    <Button title="Usar outra conta" variant="text" onPress={() => void signOut()}/>
+  </Screen>;
+}

@@ -1,0 +1,152 @@
+import type { AuthError } from "@supabase/supabase-js";
+import { ApiError, apiRequest } from "./api.ts";
+import { appendFile, clientConfig, supabase, type UploadFile } from "./config.ts";
+import type { AutorizacaoDePush, EncerramentoDePush, RegistroDePush } from "@muve/shared/contratos.ts";
+import type { RedesSociais } from "@muve/shared/dominio.ts";
+
+export type Role = "MUSICIAN" | "CONTRACTOR";
+
+export interface Me {
+  id: string;
+  email: string;
+  role: Role;
+  nome: string;
+  documento: string | null;
+  telefone: string | null;
+  uf: string | null;
+  cidade: string | null;
+  fotoPerfilUrl: string | null;
+  avaliacaoMedia: number;
+  totalAvaliacoes: number;
+  bio?: string | null;
+  estilosMusicais?: string[] | null;
+  chavePixTipo?: string | null;
+  chavePix?: string | null;
+  portfolioUrl?: string | null;
+  redesSociais?: RedesSociais;
+  visibilidadeReduzidaAte?: string | null;
+  proAte?: string | null;
+  casaAte?: string | null;
+}
+
+interface ProfileData {
+  nome: string;
+  documento?: string | null;
+  telefone?: string | null;
+  uf?: string | null;
+  cidade?: string | null;
+  bio?: string | null;
+  estilosMusicais?: string[] | null;
+  chavePixTipo?: string | null;
+  chavePix?: string | null;
+  portfolioUrl?: string | null;
+  redesSociais?: RedesSociais;
+  senhaAtual?: string;
+  captchaToken?: string;
+}
+
+interface SignupData {
+  role: Role;
+  nome: string;
+  email: string;
+  password: string;
+  aceiteTermos: boolean;
+  captchaToken?: string;
+}
+
+const REMEMBERED_EMAIL_KEY = "muve.rememberedEmail";
+
+function withFile(dados: object, avatar: UploadFile | null): FormData {
+  const form = new FormData();
+  form.append("dados", JSON.stringify(dados));
+  appendFile(form, "avatar", avatar);
+  return form;
+}
+
+function authError(error: AuthError): ApiError {
+  const messages: Record<string, string> = {
+    invalid_credentials: "E-mail não cadastrado ou senha incorreta.",
+    email_not_confirmed: "Confirme seu e-mail pelo link que enviamos antes de entrar.",
+    email_address_invalid: "Informe um e-mail válido.",
+    over_request_rate_limit: "Muitas tentativas. Aguarde alguns minutos e tente novamente.",
+    over_email_send_rate_limit: "Muitos e-mails solicitados. Aguarde alguns minutos e tente novamente.",
+    weak_password: "Escolha uma senha mais forte.",
+    same_password: "A nova senha deve ser diferente da atual.",
+    captcha_failed: "Não foi possível confirmar que você não é um robô. Tente novamente.",
+  };
+  const message = (error.code && messages[error.code]) || "Não foi possível concluir a operação. Tente novamente.";
+  return new ApiError(message, error.status ?? 0, error.code ?? "ERRO_DE_AUTENTICACAO");
+}
+
+export async function signUp(dados: SignupData): Promise<void> {
+  await apiRequest("/auth/signup", { method: "POST", body: { ...dados, redirectTo: clientConfig().redirectUrl } });
+}
+
+export async function signIn(email: string, password: string, captchaToken?: string): Promise<void> {
+  const { error } = await supabase().auth.signInWithPassword({ email, password, options: { captchaToken } });
+  if (error) throw authError(error);
+}
+
+interface OperacaoDeDispositivo {
+  token: string;
+  operationId: string;
+  comprovante: string;
+}
+
+export const emitirAutorizacaoDeDispositivo = (operacao: OperacaoDeDispositivo) =>
+  apiRequest<AutorizacaoDePush>("/me/dispositivos/autorizacoes", { method: "POST", body: operacao });
+export const registrarDispositivo = (operacao: OperacaoDeDispositivo & { vinculoId: string }) =>
+  apiRequest<RegistroDePush>("/me/dispositivos", { method: "POST", body: operacao });
+export const cancelarDispositivo = (operacao: OperacaoDeDispositivo) =>
+  apiRequest<EncerramentoDePush>("/me/dispositivos/remover", { method: "POST", body: operacao });
+export const revogarDispositivo = (dados: { token: string; operationId: string; segredo: string }) =>
+  apiRequest<EncerramentoDePush>("/dispositivos/revogar", { method: "POST", body: dados, accessToken: "" });
+
+export const completeProfile = (dados: { role: Role; nome: string; aceiteTermos: boolean }) =>
+  apiRequest("/me/perfil", { method: "POST", body: dados });
+
+export async function signOut(): Promise<void> {
+  await supabase().auth.signOut({ scope: "local" });
+}
+
+export async function requestPasswordReset(email: string, captchaToken?: string): Promise<void> {
+  const { error } = await supabase().auth.resetPasswordForEmail(email, { redirectTo: clientConfig().redirectUrl, captchaToken });
+  if (error) throw authError(error);
+}
+
+export async function updatePassword(password: string): Promise<void> {
+  const { error } = await supabase().auth.updateUser({ password });
+  if (error) throw authError(error);
+}
+
+export function fetchMe(accessToken?: string): Promise<Me> {
+  return apiRequest<Me>("/me", { accessToken });
+}
+
+export function updateProfile(dados: ProfileData, avatar: UploadFile | null): Promise<Me> {
+  return apiRequest<Me>("/me", { method: "PATCH", body: withFile(dados, avatar) });
+}
+
+export async function hasPasswordLogin(): Promise<boolean> {
+  const { data } = await supabase().auth.getSession();
+  const metadata = data.session?.user.app_metadata;
+  return (metadata?.providers ?? [metadata?.provider]).includes("email");
+}
+
+export async function deleteAccount(email: string, password: string, captchaToken?: string): Promise<void> {
+  await apiRequest("/me", { method: "DELETE", body: { email, password, captchaToken } });
+  await forgetEmail();
+  await signOut();
+}
+
+export async function rememberedEmail(): Promise<string> {
+  return (await clientConfig().storage.get(REMEMBERED_EMAIL_KEY).catch(() => null)) ?? "";
+}
+
+export async function rememberEmail(email: string): Promise<void> {
+  await clientConfig().storage.set(REMEMBERED_EMAIL_KEY, email).catch(() => {});
+}
+
+export async function forgetEmail(): Promise<void> {
+  await clientConfig().storage.remove(REMEMBERED_EMAIL_KEY).catch(() => {});
+}

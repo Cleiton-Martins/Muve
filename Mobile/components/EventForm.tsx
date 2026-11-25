@@ -1,0 +1,177 @@
+import { useRef, useState } from "react";
+import { Text, View } from "react-native";
+import { errorMessage } from "../client/api.ts";
+import { cepDigits, CepError, decidirEnderecoDoCep, formatCep, lookupCep } from "../client/cep.ts";
+import type { UploadFile } from "../client/config.ts";
+import { createEvent, updateEvent, type EventItem } from "../client/events.ts";
+import { completarHorario, eventDateParts, formatCurrency, minutesToTimeInput, parseValor, timeInputToMinutes, toValorInput } from "../client/format.ts";
+import { calcularCobranca, CASA_SEMANAS_MAXIMAS, comissaoPercentual, ESTILOS_EVENTO, FORMACOES, horarioLocalDoEvento, isPro, isValidCache, QUALQUER_ESTILO, TIPOS_EVENTO } from "@muve/shared/dominio.ts";
+import { colors, radius, space, styles, type } from "../lib/theme";
+import { useMe } from "../lib/useMe";
+import { ImageField, LocationFields } from "./fields";
+import { Alert, Button, Checkbox, Chips, Field, Grupo, Select } from "./ui";
+import { avisar } from "../lib/confirm";
+
+type EditableEvent = EventItem & { endereco: string };
+
+const SEMANAS = Array.from({ length: CASA_SEMANAS_MAXIMAS }, (_, i) => ({ value: String(i + 1), label: i === 0 ? "Só esta data" : `Toda semana, por ${i + 1} semanas` }));
+
+const maskDate = (v: string) => v.replace(/\D/g, "").slice(0, 8).replace(/(\d{2})(\d)/, "$1/$2").replace(/(\d{2})\/(\d{2})(\d)/, "$1/$2/$3");
+const maskTime = (v: string) => v.replace(/\D/g, "").slice(0, 4).replace(/(\d{2})(\d)/, "$1:$2");
+const toIsoDate = (br: string) => br.split("/").reverse().join("-");
+
+function initialForm(event: EditableEvent | null, local?: { uf: string | null; cidade: string | null }) {
+  const inicio = event ? eventDateParts(event.inicio, event.uf) : null;
+  return {
+    titulo: event?.titulo ?? "",
+    tipoEvento: event?.tipoEvento ?? "",
+    data: inicio ? inicio.data : "",
+    horario: inicio ? inicio.time : "",
+    duracao: event ? minutesToTimeInput(event.duracaoMinutos) : "",
+    cache: event ? toValorInput(event.cache) : "",
+    uf: event?.uf ?? local?.uf ?? "",
+    cidade: event?.cidade ?? local?.cidade ?? "",
+    endereco: event?.endereco ?? "",
+    estilosMusicais: event?.estilosMusicais ?? [],
+    formacao: event?.formacao ?? "Indiferente",
+    somDisponivel: event?.somDisponivel ?? false,
+    descricao: event?.descricao ?? "",
+    repetirSemanas: 1,
+  };
+}
+
+export default function EventForm({ event, local, onSaved }: { event: EditableEvent | null; local?: { uf: string | null; cidade: string | null }; onSaved: (id: string) => void }) {
+  const [form, setForm] = useState(() => initialForm(event, local));
+  const [imagem, setImagem] = useState<UploadFile | null>(null);
+  const [preview, setPreview] = useState(event?.imagemUrl ?? "");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const set = (changes: Partial<typeof form>) => { setForm((c) => ({ ...c, ...changes })); setError(""); };
+  const cacheNumber = parseValor(form.cache);
+  const [cep, setCep] = useState("");
+  const [cepAviso, setCepAviso] = useState("");
+  const [sugestaoDoCep, setSugestaoDoCep] = useState("");
+  const ultimoCep = useRef("");
+  const enderecoDigitado = useRef(form.endereco);
+  enderecoDigitado.current = form.endereco;
+  const me = useMe();
+  const casa = isPro(me.casaAte);
+  const taxa = comissaoPercentual(me.casaAte);
+
+  async function buscarCep(value: string) {
+    const digits = cepDigits(value);
+    setCep(formatCep(value));
+    setCepAviso("");
+    setSugestaoDoCep("");
+    ultimoCep.current = digits;
+    if (digits.length !== 8) return;
+    setCepAviso("Consultando o CEP...");
+    try {
+      const encontrado = await lookupCep(digits);
+      if (ultimoCep.current !== digits) return;
+      const decisao = decidirEnderecoDoCep(enderecoDigitado.current, encontrado);
+      if (decisao.acao === "preencher") {
+        set({ uf: encontrado.uf, cidade: encontrado.cidade, endereco: decisao.endereco });
+        setCepAviso("Endereço encontrado. Confira e informe o número.");
+        return;
+      }
+      set({ uf: encontrado.uf, cidade: encontrado.cidade });
+      if (decisao.acao === "manter") {
+        setSugestaoDoCep(decisao.sugestao);
+        setCepAviso(`Mantivemos o endereço que você digitou. O CEP indica: ${decisao.sugestao}.`);
+      } else {
+        setCepAviso("Estado e cidade preenchidos. Informe a rua, o número e o bairro.");
+      }
+    } catch (e) {
+      if (ultimoCep.current === digits) setCepAviso(e instanceof CepError ? e.message : "Não foi possível consultar o CEP.");
+    }
+  }
+
+  async function submit() {
+    const inicio = horarioLocalDoEvento(toIsoDate(form.data), form.horario, form.uf);
+    if (!form.titulo.trim()) return setError("Informe o título do evento.");
+    if (!form.tipoEvento || form.data.length !== 10 || form.horario.length !== 5 || form.duracao.length !== 5) return setError("Informe tipo, data, horário de início e duração do evento.");
+    if (Number.isNaN(inicio.getTime())) return setError("Data ou horário inválido.");
+    if (inicio <= new Date()) return setError("O horário de início não pode ser inferior ao horário atual.");
+    if (timeInputToMinutes(form.duracao) < 1) return setError("Informe a duração do evento.");
+    if (Number.isNaN(cacheNumber)) return setError("Não entendemos o cachê. Digite como 150 ou 150,50.");
+    if (!isValidCache(cacheNumber)) return setError("O cachê mínimo é de R$ 100,00.");
+    if (!form.uf || !form.cidade) return setError("Selecione o estado e a cidade do evento.");
+    if (form.endereco.trim().length < 5) return setError("Informe o endereço do evento.");
+    if (form.estilosMusicais.length === 0) return setError("Selecione ao menos um estilo musical, ou \"Qualquer estilo\".");
+    if (!event && !imagem) return setError("Adicione uma foto do evento.");
+
+    const dados = {
+      titulo: form.titulo,
+      tipoEvento: form.tipoEvento,
+      inicio: inicio.toISOString(),
+      duracaoMinutos: timeInputToMinutes(form.duracao),
+      uf: form.uf,
+      cidade: form.cidade,
+      endereco: form.endereco.trim(),
+      estilosMusicais: form.estilosMusicais,
+      formacao: form.formacao,
+      somDisponivel: form.somDisponivel,
+      cache: cacheNumber,
+      descricao: form.descricao,
+      repetirSemanas: event ? 1 : form.repetirSemanas,
+    };
+    setSubmitting(true);
+    try {
+      if (event) return onSaved((await updateEvent(event.id, dados, imagem)).id);
+      const saved = await createEvent(dados, imagem!);
+      if (saved.semanasCriadas && saved.semanasPedidas && saved.semanasCriadas < saved.semanasPedidas) {
+        return avisar("Recorrência incompleta", `Foram criadas ${saved.semanasCriadas} de ${saved.semanasPedidas} semanas. Crie as que faltam a partir da última data.`, () => onSaved(saved.id));
+      }
+      onSaved(saved.id);
+    } catch (e) {
+      setError(errorMessage(e));
+      setSubmitting(false);
+    }
+  }
+
+  const options = (values: readonly string[]) => values.map((v) => ({ value: v, label: v }));
+
+  return <>
+    <ImageField shape="banner" label={event ? "Trocar foto do evento" : "Foto do evento"} preview={preview} onPick={(file, uri) => { setImagem(file); setPreview(uri); setError(""); }} onError={setError}/>
+    <Grupo titulo="O evento" icone="calendar-outline">
+      <Field label="Título" value={form.titulo} onChangeText={(titulo) => set({ titulo })} placeholder="Ex: Noite acústica no terraço"/>
+      <Select label="Tipo de evento" value={form.tipoEvento} options={options(TIPOS_EVENTO)} onChange={(tipoEvento) => set({ tipoEvento })}/>
+      <View style={{ flexDirection: "row", gap: space.md }}>
+        <View style={{ flex: 1.3 }}><Field label="Data" value={form.data} onChangeText={(v) => set({ data: maskDate(v) })} keyboardType="numeric" placeholder="DD/MM/AAAA"/></View>
+        <View style={{ flex: 1 }}><Field label="Início" value={form.horario} onChangeText={(v) => set({ horario: maskTime(v) })} onBlur={() => set({ horario: completarHorario(form.horario) })} keyboardType="numeric" placeholder="HH:MM"/></View>
+        <View style={{ flex: 1 }}><Field label="Duração" value={form.duracao} onChangeText={(v) => set({ duracao: maskTime(v) })} onBlur={() => set({ duracao: completarHorario(form.duracao) })} keyboardType="numeric" placeholder="HH:MM"/></View>
+      </View>
+      <Field label="Descrição" value={form.descricao} onChangeText={(descricao) => set({ descricao })} multiline maxLength={2000} placeholder="Repertório esperado, público, estrutura disponível..."/>
+    </Grupo>
+    <Grupo titulo="Onde" icone="location-outline">
+      <Field label="CEP (opcional)" value={cep} onChangeText={(v) => void buscarCep(v)} keyboardType="numeric" placeholder="00000-000" hint={cepAviso || "Preenche estado, cidade e rua para você."}/>
+      <LocationFields uf={form.uf} cidade={form.cidade} onUfChange={(uf) => set({ uf, cidade: "" })} onCidadeChange={(cidade) => set({ cidade })} onError={setError}/>
+      <Field label="Endereço" value={form.endereco} onChangeText={(endereco) => set({ endereco })} placeholder="Rua, número, bairro e referência" hint="Visível apenas para o músico contratado."/>
+      {sugestaoDoCep ? <Button variant="text" block={false} icon="location-outline" title="Usar o endereço do CEP" onPress={() => { set({ endereco: sugestaoDoCep }); setSugestaoDoCep(""); setCepAviso("Endereço substituído pelo do CEP. Confira e informe o número."); }}/> : null}
+    </Grupo>
+    <Grupo titulo="Quem você procura" icone="musical-notes-outline">
+      <Chips options={ESTILOS_EVENTO} selected={form.estilosMusicais} onToggle={(estilo) => {
+        const selected = form.estilosMusicais.includes(estilo);
+        set({ estilosMusicais: estilo === QUALQUER_ESTILO ? (selected ? [] : [QUALQUER_ESTILO]) : selected ? form.estilosMusicais.filter((x) => x !== estilo) : [...form.estilosMusicais.filter((x) => x !== QUALQUER_ESTILO), estilo] });
+      }}/>
+      <Select label="Formação" value={form.formacao} options={options(FORMACOES)} onChange={(formacao) => set({ formacao })}/>
+      <Checkbox label="O local oferece equipamento de som (caixas, mesa e microfones)" checked={form.somDisponivel} onChange={(somDisponivel) => set({ somDisponivel })}/>
+    </Grupo>
+    <Grupo titulo="Cachê" icone="cash-outline">
+      <Field label="Valor oferecido (R$)" value={form.cache} onChangeText={(v) => set({ cache: v.replace(/[^\d.,]/g, "") })} keyboardType="decimal-pad" placeholder="100,00 ou mais" hint={cacheNumber >= 100 ? undefined : `Mínimo de R$ 100,00. A taxa de serviço de ${taxa}% é somada ao cachê.`}/>
+      {cacheNumber >= 100 && <View style={[styles.row, { alignItems: "stretch", padding: space.md, borderRadius: radius.md, backgroundColor: colors.accentSoft }]}>
+        <View style={{ flex: 1, gap: 2 }}><Text style={type.labelSmall}>Você paga</Text><Text style={[type.price, { fontSize: 22, lineHeight: 26 }]}>{formatCurrency(calcularCobranca(cacheNumber, taxa).total)}</Text><Text style={[type.bodySmall, { fontSize: 12 }]}>Inclui a taxa de {taxa}%</Text></View>
+        <View style={{ width: 1, backgroundColor: colors.hairline, marginHorizontal: space.md }}/>
+        <View style={{ flex: 1, gap: 2 }}><Text style={type.labelSmall}>Músico recebe</Text><Text style={[type.price, { fontSize: 22, lineHeight: 26, color: colors.accentText }]}>{formatCurrency(cacheNumber)}</Text><Text style={[type.bodySmall, { fontSize: 12 }]}>Guardado até o show</Text></View>
+      </View>}
+    </Grupo>
+    {!event && <Grupo titulo="Repetir" icone="repeat-outline">
+      {casa
+        ? <Select label="Quantas semanas" value={String(form.repetirSemanas)} options={SEMANAS} onChange={(v) => set({ repetirSemanas: Number(v) })}/>
+        : <Text style={type.bodySmall}>Com o Muve Casa, um evento semanal vira até {CASA_SEMANAS_MAXIMAS} eventos de uma vez.</Text>}
+    </Grupo>}
+    {error ? <Alert tone="error">{error}</Alert> : null}
+    <Button title={event ? "Salvar alterações" : "Publicar evento"} icon={event ? "save-outline" : "megaphone-outline"} onPress={submit} loading={submitting}/>
+  </>;
+}

@@ -1,0 +1,313 @@
+export const ESTILOS_MUSICAIS = [
+  "MPB", "Bossa nova", "Samba", "Pagode", "Sertanejo", "Forró", "Axé", "Funk", "Rap / Hip-hop", "Gospel",
+  "Pop", "Rock", "Indie", "Metal", "Reggae", "Eletrônico / DJ", "Jazz", "Blues", "Soul / R&B", "Clássico / Erudito",
+  "Instrumental", "Country", "Infantil", "Cover / Baile", "Outros",
+] as const;
+
+export const QUALQUER_ESTILO = "Qualquer estilo";
+export const ESTILOS_EVENTO = [QUALQUER_ESTILO, ...ESTILOS_MUSICAIS] as const;
+
+export const TIPOS_EVENTO = ["Bar e restaurante", "Festa particular", "Corporativo"] as const;
+
+export const UFS = [
+  "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA",
+  "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO",
+] as const;
+
+export const FORMACOES = ["Indiferente", "Solo", "Dupla", "Trio", "Banda"] as const;
+
+export const RAIOS_FEED_KM = [0, 50, 100, 200] as const;
+export const RAIOS_FEED_PRO_KM = [0, 50, 100, 200, 400] as const;
+export const RAIO_MAXIMO_KM = 200;
+export const PRO_RAIO_MAXIMO_KM = 400;
+export const PRO_PRECO = 19.9;
+export const PLANO_DIAS_POR_PAGAMENTO = 31;
+export const CASA_PRECO = 49.9;
+export const COMISSAO_CASA_PERCENTUAL = 6;
+export const CASA_SEMANAS_MAXIMAS = 8;
+export const PRO_ANTECIPACAO_HORAS = 24;
+export const PRO_ANTECEDENCIA_MINIMA_DIAS = 7;
+
+export const TIPOS_CHAVE_PIX = ["CPF", "CNPJ", "EMAIL", "PHONE", "EVP"] as const;
+export type TipoChavePix = (typeof TIPOS_CHAVE_PIX)[number];
+export const ROTULOS_CHAVE_PIX: Record<TipoChavePix, string> = {
+  CPF: "CPF",
+  CNPJ: "CNPJ",
+  EMAIL: "E-mail",
+  PHONE: "Celular",
+  EVP: "Chave aleatória",
+};
+
+export const CACHE_MINIMO = 100;
+export const SENHA_TAMANHO_MINIMO = 8;
+const IMAGEM_TAMANHO_MAXIMO = 5 * 1024 * 1024;
+const IMAGEM_TIPOS_ACEITOS = ["image/jpeg", "image/png", "image/webp"] as const;
+
+export const COMISSAO_PERCENTUAL = 10;
+export const EMAIL_SUPORTE = "muveapp.contato@gmail.com";
+export const MULTA_AUSENCIA_PERCENTUAL = 20;
+export const VISIBILIDADE_REDUZIDA_DIAS = 15;
+
+const FUSOS_FORA_DE_BRASILIA: Record<string, { fuso: string; offset: string }> = {
+  AC: { fuso: "America/Rio_Branco", offset: "-05:00" },
+  AM: { fuso: "America/Manaus", offset: "-04:00" },
+  MS: { fuso: "America/Campo_Grande", offset: "-04:00" },
+  MT: { fuso: "America/Cuiaba", offset: "-04:00" },
+  RO: { fuso: "America/Porto_Velho", offset: "-04:00" },
+  RR: { fuso: "America/Boa_Vista", offset: "-04:00" },
+};
+
+export const fusoDaUf = (uf: string) => FUSOS_FORA_DE_BRASILIA[uf]?.fuso ?? "America/Sao_Paulo";
+
+export function horarioLocalDoEvento(data: string, horario: string, uf: string): Date {
+  const [ano, mes, dia] = data.split("-").map(Number);
+  const [hora, minuto] = horario.split(":").map(Number);
+  const diasDoMes = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
+  if (!(mes >= 1 && mes <= 12 && dia >= 1 && dia <= diasDoMes && hora >= 0 && hora <= 23 && minuto >= 0 && minuto <= 59)) return new Date(Number.NaN);
+  return new Date(`${data}T${horario}:00${FUSOS_FORA_DE_BRASILIA[uf]?.offset ?? "-03:00"}`);
+}
+export const TERMOS_VERSAO = "2026-11-20";
+export const CANCELAMENTO_ANTECEDENCIA_MINIMA_MS = 24 * 60 * 60 * 1000;
+export const COBRANCA_VALIDADE_MS = 15 * 60 * 1000;
+export const CHECKOUT_TEMPO_LIMITE_APP_MS = 60_000;
+export const CONCLUSAO_AUTOMATICA_MS = 7 * 24 * 60 * 60 * 1000;
+export const AUSENCIA_PRAZO_RESPOSTA_MS = 24 * 60 * 60 * 1000;
+
+export const onlyDigits = (value: string) => value.replace(/\D/g, "");
+
+export const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim()) && email.trim().length <= 254;
+
+export const isValidCache = (value: number) => value >= CACHE_MINIMO;
+
+export const valorDaInscricao = (valorProposto: number | null, cacheOferecido: number): number | null =>
+  valorProposto === cacheOferecido ? null : valorProposto;
+
+export const isValidUrl = (value: string) => /^https?:\/\/\S+\.\S+$/.test(value.trim()) && value.trim().length <= 300;
+
+export const REDES_SOCIAIS = ["instagram", "youtube", "spotify", "tiktok"] as const;
+export type RedeSocial = (typeof REDES_SOCIAIS)[number];
+export type RedesSociais = Partial<Record<RedeSocial, string>>;
+export const ROTULOS_REDES: Record<RedeSocial, string> = { instagram: "Instagram", youtube: "YouTube", spotify: "Spotify", tiktok: "TikTok" };
+const DOMINIOS_DAS_REDES: Record<RedeSocial, string[]> = {
+  instagram: ["instagram.com"],
+  youtube: ["youtube.com", "youtu.be"],
+  spotify: ["spotify.com"],
+  tiktok: ["tiktok.com"],
+};
+const PERFIL_POR_USUARIO: Partial<Record<RedeSocial, string>> = { instagram: "https://www.instagram.com/", tiktok: "https://www.tiktok.com/@" };
+
+export const linkComProtocolo = (texto: string) => {
+  const limpo = texto.trim();
+  if (!limpo) return "";
+  return /^https?:\/\//i.test(limpo) ? limpo : `https://${limpo}`;
+};
+
+export const aceitaUsuarioDaRede = (rede: RedeSocial) => rede in PERFIL_POR_USUARIO;
+
+export const mensagemDeRedeInvalida = (rede: RedeSocial) =>
+  aceitaUsuarioDaRede(rede) ? `Informe o @ ou um link válido do ${ROTULOS_REDES[rede]}.` : `Informe um link válido do ${ROTULOS_REDES[rede]}.`;
+
+export const LINK_DA_REDE_TAMANHO_MAXIMO = 300;
+
+const TODOS_OS_DOMINIOS_DAS_REDES = Object.values(DOMINIOS_DAS_REDES).flat();
+
+export function pareceLinkDeRede(texto: string): boolean {
+  const limpo = texto.trim().toLowerCase();
+  if (/^https?:\/\//.test(limpo) || /^www\./.test(limpo) || limpo.includes("/")) return true;
+  return TODOS_OS_DOMINIOS_DAS_REDES.some((dominio) => limpo === dominio || limpo.endsWith(`.${dominio}`));
+}
+
+export function normalizarLinkDaRede(rede: RedeSocial, texto: string): string | null {
+  const limpo = texto.trim();
+  if (limpo.length > LINK_DA_REDE_TAMANHO_MAXIMO) return null;
+  const usuario = /^@?([A-Za-z0-9._]{1,30})$/.exec(limpo);
+  const perfil = PERFIL_POR_USUARIO[rede];
+  if (usuario && perfil && (limpo.startsWith("@") || !pareceLinkDeRede(limpo))) return `${perfil}${usuario[1]}`;
+  const link = linkComProtocolo(limpo);
+  if (!isValidUrl(link)) return null;
+  let endereco: URL;
+  try {
+    endereco = new URL(link);
+  } catch {
+    return null;
+  }
+  const host = endereco.hostname.toLowerCase();
+  if (endereco.pathname.replace(/\/+$/, "").length === 0) return null;
+  return DOMINIOS_DAS_REDES[rede].some((dominio) => host === dominio || host.endsWith(`.${dominio}`)) ? link : null;
+}
+
+export const isValidTelefone = (value: string) => [10, 11].includes(onlyDigits(value).length);
+
+function checkDigit(digits: number[], weights: number[]): number {
+  const rest = digits.reduce((sum, digit, i) => sum + digit * weights[i], 0) % 11;
+  return rest < 2 ? 0 : 11 - rest;
+}
+
+export function isValidCPF(value: string): boolean {
+  const cpf = onlyDigits(value);
+  if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) return false;
+  const d = [...cpf].map(Number);
+  return (
+    checkDigit(d.slice(0, 9), [10, 9, 8, 7, 6, 5, 4, 3, 2]) === d[9] &&
+    checkDigit(d.slice(0, 10), [11, 10, 9, 8, 7, 6, 5, 4, 3, 2]) === d[10]
+  );
+}
+
+export function isValidCNPJ(value: string): boolean {
+  const cnpj = onlyDigits(value);
+  if (cnpj.length !== 14 || /^(\d)\1{13}$/.test(cnpj)) return false;
+  const d = [...cnpj].map(Number);
+  return (
+    checkDigit(d.slice(0, 12), [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]) === d[12] &&
+    checkDigit(d.slice(0, 13), [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]) === d[13]
+  );
+}
+
+export const isValidDocumento = (value: string) => isValidCPF(value) || isValidCNPJ(value);
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isValidChavePix(tipo: string, chave: string): boolean {
+  switch (tipo) {
+    case "CPF":
+      return isValidCPF(chave);
+    case "CNPJ":
+      return isValidCNPJ(chave);
+    case "EMAIL":
+      return isValidEmail(chave);
+    case "PHONE":
+      return onlyDigits(chave).length === 11;
+    case "EVP":
+      return UUID.test(chave.trim());
+    default:
+      return false;
+  }
+}
+
+export function normalizeChavePix(tipo: string, chave: string): string {
+  if (tipo === "CPF" || tipo === "CNPJ" || tipo === "PHONE") return onlyDigits(chave);
+  return chave.trim().toLowerCase();
+}
+
+const ASSINATURAS_DE_IMAGEM: Record<string, (bytes: Uint8Array) => boolean> = {
+  "image/png": (b) => b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47,
+  "image/jpeg": (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff,
+  "image/webp": (b) => b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50,
+};
+
+export async function conteudoDeImagemConfere(file: Blob): Promise<boolean> {
+  const confere = ASSINATURAS_DE_IMAGEM[file.type];
+  if (!confere) return false;
+  return confere(new Uint8Array(await file.slice(0, 12).arrayBuffer()));
+}
+
+export function imageProblem(file: { type: string; size: number }): string | null {
+  if (!(IMAGEM_TIPOS_ACEITOS as readonly string[]).includes(file.type)) {
+    return "Formato inválido. Use PNG, JPEG ou WebP.";
+  }
+  if (file.size > IMAGEM_TAMANHO_MAXIMO) return "A imagem deve ter no máximo 5 MB.";
+  return null;
+}
+
+const normalizeCidade = (value: string) =>
+  value
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .trim()
+    .toLowerCase();
+
+export const isPro = (proAte: Date | string | null | undefined, now = new Date()) => Boolean(proAte && new Date(proAte).getTime() > now.getTime());
+
+const PRO_ANTECIPACAO_MS = PRO_ANTECIPACAO_HORAS * 60 * 60 * 1000;
+const PRO_ANTECEDENCIA_MINIMA_MS = PRO_ANTECEDENCIA_MINIMA_DIAS * 24 * 60 * 60 * 1000;
+
+export function emAcessoAntecipado(evento: { inicio: Date | string; criadoEm: Date | string }, now = new Date()): boolean {
+  const publicado = new Date(evento.criadoEm).getTime();
+  const inicio = new Date(evento.inicio).getTime();
+  return now.getTime() - publicado < PRO_ANTECIPACAO_MS && inicio - now.getTime() >= PRO_ANTECEDENCIA_MINIMA_MS;
+}
+
+export const liberadoParaTodosEm = (evento: { inicio: Date | string; criadoEm: Date | string }) =>
+  new Date(Math.min(new Date(evento.criadoEm).getTime() + PRO_ANTECIPACAO_MS, new Date(evento.inicio).getTime() - PRO_ANTECEDENCIA_MINIMA_MS + 1));
+
+export function eventMatchesMusician(
+  event: { uf: string; cidade: string; estilosMusicais: readonly string[] },
+  musician: { uf: string; cidade: string; estilosMusicais: readonly string[] },
+  distanciaKm: number | null = null,
+  raioMaximoKm: number = RAIO_MAXIMO_KM,
+): boolean {
+  if (!estilosCompativeis(event.estilosMusicais, musician.estilosMusicais)) return false;
+  const mesmaCidade = event.uf === musician.uf && normalizeCidade(event.cidade) === normalizeCidade(musician.cidade);
+  return mesmaCidade || (distanciaKm !== null && distanciaKm <= raioMaximoKm);
+}
+
+export const estilosCompativeis = (doEvento: readonly string[], doMusico: readonly string[]) =>
+  doEvento.includes(QUALQUER_ESTILO) || doEvento.some((estilo) => doMusico.includes(estilo));
+
+export const hasCancellationNotice = (inicio: Date, now: Date) =>
+  inicio.getTime() - now.getTime() > CANCELAMENTO_ANTECEDENCIA_MINIMA_MS;
+
+export const comissaoPercentual = (casaAte: Date | string | null | undefined, now = new Date()) =>
+  isPro(casaAte, now) ? COMISSAO_CASA_PERCENTUAL : COMISSAO_PERCENTUAL;
+
+export function calcularCobranca(cache: number, percentual: number = COMISSAO_PERCENTUAL): { cache: number; comissao: number; total: number } {
+  const centavos = Math.round(cache * 100);
+  const comissao = Math.round((centavos * percentual) / 100);
+  return { cache: centavos / 100, comissao: comissao / 100, total: (centavos + comissao) / 100 };
+}
+
+export interface EstimativaDoContratante {
+  cache: number;
+  comissao: number;
+  total: number;
+  percentual: number;
+  casaAte: Date | null;
+}
+
+export function estimarCobrancaDoContratante(valor: number | null | undefined, casaAte: Date | string | null | undefined, now = new Date()): EstimativaDoContratante | null {
+  if (typeof valor !== "number" || !Number.isFinite(valor) || valor <= 0) return null;
+  const percentual = comissaoPercentual(casaAte, now);
+  const { cache, comissao, total } = calcularCobranca(valor, percentual);
+  return { cache, comissao, total, percentual, casaAte: casaAte && isPro(casaAte, now) ? new Date(casaAte) : null };
+}
+
+export type AcaoPerfil = "feed" | "candidatar" | "criarEvento" | "pagar";
+export type CampoPerfil = "foto" | "documento" | "telefone" | "cidade" | "estilos" | "chavePix";
+
+const ROTULOS_CAMPOS: Record<CampoPerfil, string> = {
+  foto: "foto de perfil",
+  documento: "CPF ou CNPJ",
+  telefone: "telefone",
+  cidade: "estado e cidade",
+  estilos: "estilos musicais",
+  chavePix: "chave Pix",
+};
+
+interface PerfilParaChecagem {
+  role: "MUSICIAN" | "CONTRACTOR";
+  fotoPerfilUrl?: string | null;
+  documento?: string | null;
+  telefone?: string | null;
+  uf?: string | null;
+  cidade?: string | null;
+  estilosMusicais?: readonly string[] | null;
+  chavePix?: string | null;
+}
+
+export function camposFaltantes(perfil: PerfilParaChecagem, acao: AcaoPerfil): CampoPerfil[] {
+  const exigidos: CampoPerfil[] =
+    acao === "feed" ? ["cidade", "estilos"]
+    : acao === "candidatar" ? ["cidade", "estilos", "foto", "documento", "telefone", "chavePix"]
+    : ["foto", "documento", "telefone", "cidade"];
+  const vazio = {
+    foto: !perfil.fotoPerfilUrl,
+    documento: !perfil.documento,
+    telefone: !perfil.telefone,
+    cidade: !perfil.uf || !perfil.cidade,
+    estilos: !perfil.estilosMusicais || perfil.estilosMusicais.length === 0,
+    chavePix: !perfil.chavePix,
+  };
+  return exigidos.filter((campo) => vazio[campo]);
+}
+
+export const descreverFaltantes = (campos: CampoPerfil[]) => campos.map((c) => ROTULOS_CAMPOS[c]).join(", ");
